@@ -111,23 +111,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { ValuApi } = await import('@arkeytyp/valu-api') as any;
 
+      // Singleton: reuse existing instance or create new one
+      let valuApi = (globalThis as any).valuApi;
+      if (!valuApi) {
+        valuApi = (globalThis as any).valuApi = new ValuApi();
+      }
+
+      // API_READY is an event name string, not a Promise — use addEventListener
       const ready = await Promise.race([
         new Promise<boolean>((resolve) => {
-          ValuApi.API_READY.then(() => resolve(true));
+          if (valuApi.connected) {
+            resolve(true);
+          } else {
+            valuApi.addEventListener(ValuApi.API_READY, () => resolve(true));
+          }
         }),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2000)),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3000)),
       ]);
 
       if (!ready) return false;
 
-      const valuApi = new ValuApi();
-      const usersApi = (valuApi as any).getApi('users');
+      // getApi returns a Promise — must be awaited
+      const usersApi = await valuApi.getApi('users');
       const user = await usersApi.run('current');
 
       if (!user || !user.id) return false;
 
       const id = user.id as string;
-      const avatarUrl = (user.avatar as string) || getDiceBearUrl(id);
+
+      // Avatar requires a separate API call
+      let avatarUrl: string;
+      try {
+        const icon = await usersApi.run('get-icon', { userId: id });
+        avatarUrl = icon || getDiceBearUrl(id);
+      } catch {
+        avatarUrl = getDiceBearUrl(id);
+      }
+
+      // User fields are firstName/lastName, not name
+      const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ');
 
       // Load or create profile for nickname
       let nickname: string;
@@ -135,7 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (profile) {
         nickname = profile.nickname;
       } else {
-        nickname = (user.name as string) || generateNickname();
+        nickname = displayName || generateNickname();
         await upsertProfile(id, nickname, id);
       }
 
