@@ -109,7 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const initValuVerse = useCallback(async (): Promise<boolean> => {
     try {
-      const { ValuApi } = await import('@arkeytyp/valu-api');
+      const { ValuApi } = await import('@arkeytyp/valu-api') as any;
 
       const ready = await Promise.race([
         new Promise<boolean>((resolve) => {
@@ -121,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!ready) return false;
 
       const valuApi = new ValuApi();
-      const usersApi = valuApi.getApi('users');
+      const usersApi = (valuApi as any).getApi('users');
       const user = await usersApi.run('current');
 
       if (!user || !user.id) return false;
