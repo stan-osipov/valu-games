@@ -34,6 +34,24 @@ export function useAuth(): AuthContextValue {
   return ctx;
 }
 
+// Convert a Valu ID (not a UUID) into a deterministic UUID v5-style hash
+// so the same Valu user always maps to the same Supabase profile row.
+async function valuIdToUuid(valuId: string): Promise<string> {
+  const data = new TextEncoder().encode('valu:' + valuId);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  const hex = Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  // Format as UUID v4 shape: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    '4' + hex.slice(13, 16),
+    ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16) + hex.slice(17, 20),
+    hex.slice(20, 32),
+  ].join('-');
+}
+
 async function upsertProfile(id: string, nickname: string, avatarSeed: string) {
   const { error } = await supabase
     .from('profiles')
@@ -137,35 +155,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!user || !user.id) return false;
 
-      const id = user.id as string;
+      const valuId = user.id as string;
+
+      // Valu IDs are not UUIDs — generate a deterministic UUID for Supabase
+      // but keep the mapping consistent so the same Valu user always gets the same UUID
+      const localId = await valuIdToUuid(valuId);
 
       // Avatar requires a separate API call
       let avatarUrl: string;
       try {
-        const icon = await usersApi.run('get-icon', { userId: id });
-        avatarUrl = icon || getDiceBearUrl(id);
+        const icon = await usersApi.run('get-icon', { userId: valuId });
+        avatarUrl = icon || getDiceBearUrl(valuId);
       } catch {
-        avatarUrl = getDiceBearUrl(id);
+        avatarUrl = getDiceBearUrl(valuId);
       }
 
       // User fields are firstName/lastName, not name
       const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ');
 
-      // Load or create profile for nickname
+      // Load or create profile in Supabase with proper UUID
       let nickname: string;
-      const profile = await loadProfile(id);
+      const profile = await loadProfile(localId);
       if (profile) {
         nickname = profile.nickname;
       } else {
         nickname = displayName || generateNickname();
-        await upsertProfile(id, nickname, id);
+        await upsertProfile(localId, nickname, valuId);
       }
 
       setState({
-        userId: id,
+        userId: localId,
         nickname,
         avatarUrl,
-        avatarSeed: id,
+        avatarSeed: valuId,
         isValuVerse: true,
         loading: false,
       });

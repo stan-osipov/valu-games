@@ -185,6 +185,14 @@
   gap: 0.4rem;
 }
 
+.profile-name-display {
+  margin: 0;
+  font-size: 1.2em;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-align: center;
+}
+
 .profile-name-input {
   background: transparent;
   border: 1px solid transparent;

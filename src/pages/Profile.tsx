@@ -146,22 +146,28 @@ export default function Profile() {
           )}
         </div>
         <div className="profile-identity-info">
-          <input
-            className="profile-name-input"
-            value={editName}
-            onChange={(e) => setEditName(e.target.value)}
-            onBlur={handleNameBlur}
-            onKeyDown={handleNameKey}
-            maxLength={24}
-          />
-          <button className="profile-id-btn" onClick={copyId}>
-            <span>{userId.slice(0, 8)}...{userId.slice(-4)}</span>
-            <i className={copied ? 'fa-solid fa-check' : 'fa-regular fa-copy'}></i>
-          </button>
-          <p className="profile-hint">
-            <i className="fa-solid fa-circle-info"></i>
-            This is your unique player ID. Copy and save it somewhere safe — you'll need it to log back in if you switch devices or clear your browser data.
-          </p>
+          {isValuVerse ? (
+            <p className="profile-name-display">{nickname}</p>
+          ) : (
+            <>
+              <input
+                className="profile-name-input"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                onBlur={handleNameBlur}
+                onKeyDown={handleNameKey}
+                maxLength={24}
+              />
+              <button className="profile-id-btn" onClick={copyId}>
+                <span>{userId.slice(0, 8)}...{userId.slice(-4)}</span>
+                <i className={copied ? 'fa-solid fa-check' : 'fa-regular fa-copy'}></i>
+              </button>
+              <p className="profile-hint">
+                <i className="fa-solid fa-circle-info"></i>
+                This is your unique player ID. Copy and save it somewhere safe — you'll need it to log back in if you switch devices or clear your browser data.
+              </p>
+            </>
+          )}
         </div>
       </div>
 
