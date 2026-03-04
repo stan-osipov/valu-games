@@ -64,7 +64,7 @@ async function loadProfile(id: string): Promise<{ nickname: string; avatar_seed:
     .from('profiles')
     .select('nickname, avatar_seed')
     .eq('id', id)
-    .single();
+    .maybeSingle();
   return data;
 }
 
