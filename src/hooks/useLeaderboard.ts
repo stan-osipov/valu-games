@@ -73,13 +73,16 @@ export function useLeaderboard(): LeaderboardData {
           const valuApi = (globalThis as any).valuApi;
           if (valuApi) {
             const usersApi = await valuApi.getApi('users');
-            const results = await Promise.allSettled(
+            await Promise.allSettled(
               [...profileMap.entries()].map(async ([id, p]) => {
-                const icon = await usersApi.run('get-icon', { userId: p.avatar_seed, size: 80 });
-                if (icon) valuAvatarMap.set(id, icon);
+                try {
+                  const icon = await usersApi.run('get-icon', { userId: p.avatar_seed, size: 80 });
+                  if (icon) valuAvatarMap.set(id, icon);
+                } catch {
+                  // Non-Valu user — skip, will use DiceBear fallback
+                }
               })
             );
-            void results;
           }
         } catch {
           // fallback to DiceBear
