@@ -30,15 +30,20 @@
   color: var(--text-secondary);
   font-size: 0.9em;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.25s ease;
 }
 
 .valu-close-btn:hover {
-  background: rgba(255, 70, 70, 0.15);
-  border-color: rgba(255, 70, 70, 0.3);
+  background: rgba(255, 70, 70, 0.18);
+  border-color: rgba(255, 70, 70, 0.4);
   color: #ff6b6b;
-  transform: none;
-  box-shadow: none;
+  transform: rotate(90deg) scale(1.1);
+  box-shadow: 0 0 12px rgba(255, 70, 70, 0.25);
+}
+
+.valu-close-btn:active {
+  transform: rotate(90deg) scale(0.9);
+  transition: all 0.08s ease;
 }
 
 .valu-connecting {
