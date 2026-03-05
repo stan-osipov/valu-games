@@ -34,6 +34,16 @@ export default function Game() {
   const navigate = useNavigate();
   const { userId: playerId, isValuVerse, avatarUrl: myAvatarUrl } = useAuth();
 
+  // Persist current game code for auto-rejoin on iframe reload
+  useEffect(() => {
+    if (code) sessionStorage.setItem('active_game_code', code);
+  }, [code]);
+
+  function leaveGame() {
+    sessionStorage.removeItem('active_game_code');
+    navigate('/');
+  }
+
   const [game, setGame] = useState<GameRow | null>(null);
   const [boardState, setBoardState] = useState<string>('');
   const [currentTurn, setCurrentTurn] = useState<Color>('white');
@@ -403,7 +413,7 @@ export default function Game() {
         <div className="game-error-state">
           <i className="fa-solid fa-circle-xmark"></i>
           <p>{error}</p>
-          <button onClick={() => navigate('/')}>
+          <button onClick={leaveGame}>
             <i className="fa-solid fa-house"></i> Back to Home
           </button>
         </div>
@@ -431,7 +441,7 @@ export default function Game() {
   return (
     <div className="game-page">
       <div className="game-header">
-        <button className="back-btn" onClick={() => navigate('/')}>
+        <button className="back-btn" onClick={leaveGame}>
           <i className="fa-solid fa-arrow-left"></i>
         </button>
         <div className="game-title">

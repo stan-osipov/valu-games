@@ -59,10 +59,10 @@ export default function GameOverModal({ winner, myColor }: Props) {
         <p className="game-over-subtitle">{subtitle}</p>
 
         <div className="game-over-buttons">
-          <button className="game-over-btn primary" onClick={() => navigate('/')}>
+          <button className="game-over-btn primary" onClick={() => { sessionStorage.removeItem('active_game_code'); navigate('/'); }}>
             <i className="fa-solid fa-rotate-right"></i> Play Again
           </button>
-          <button className="game-over-btn secondary" onClick={() => navigate('/')}>
+          <button className="game-over-btn secondary" onClick={() => { sessionStorage.removeItem('active_game_code'); navigate('/'); }}>
             <i className="fa-solid fa-house"></i> Home
           </button>
         </div>

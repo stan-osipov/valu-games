@@ -140,6 +140,14 @@ export default function Home() {
     }
   }, [searchParams, setSearchParams, userId, joinWithCode]);
 
+  // Auto-rejoin active game on iframe reload
+  useEffect(() => {
+    const activeCode = sessionStorage.getItem('active_game_code');
+    if (activeCode && userId) {
+      navigate(`/game/${activeCode}`, { replace: true });
+    }
+  }, [userId, navigate]);
+
   return (
     <div className="home">
       <section className="games-section">
