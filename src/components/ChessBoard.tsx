@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Chess, type Square } from 'chess.js';
-import type { Color } from '../types';
+import type { Color, LastMove } from '../types';
 
 const PIECE_SYMBOLS: Record<string, string> = {
   wp: '♙', wn: '♘', wb: '♗', wr: '♖', wq: '♕', wk: '♔',
@@ -13,11 +13,33 @@ interface Props {
   isMyTurn: boolean;
   onMove: (from: string, to: string, promotion?: string) => boolean;
   gameOver: boolean;
+  turnClass?: string;
+  lastMove?: LastMove | null;
 }
 
-export default function ChessBoard({ fen, myColor, isMyTurn, onMove, gameOver }: Props) {
+export default function ChessBoard({ fen, myColor, isMyTurn, onMove, gameOver, turnClass, lastMove }: Props) {
   const [selected, setSelected] = useState<Square | null>(null);
   const [validSquares, setValidSquares] = useState<Set<string>>(new Set());
+  const [animating, setAnimating] = useState<{ row: number; col: number; dx: number; dy: number } | null>(null);
+  const animFrameRef = useRef(0);
+
+  useEffect(() => {
+    if (!lastMove) return;
+    const dx = lastMove.from.col - lastMove.to.col;
+    const dy = lastMove.from.row - lastMove.to.row;
+    if (dx === 0 && dy === 0) return;
+
+    // Start with offset, then animate to 0
+    setAnimating({ row: lastMove.to.row, col: lastMove.to.col, dx, dy });
+    cancelAnimationFrame(animFrameRef.current);
+    animFrameRef.current = requestAnimationFrame(() => {
+      animFrameRef.current = requestAnimationFrame(() => {
+        setAnimating((prev) => prev ? { ...prev, dx: 0, dy: 0 } : null);
+      });
+    });
+    const timer = setTimeout(() => setAnimating(null), 350);
+    return () => { clearTimeout(timer); cancelAnimationFrame(animFrameRef.current); };
+  }, [lastMove]);
 
   const chess = new Chess(fen);
   const board = chess.board();
@@ -101,7 +123,7 @@ export default function ChessBoard({ fen, myColor, isMyTurn, onMove, gameOver }:
 
   return (
     <div className="board-wrapper">
-      <div className="board-container">
+      <div className={`board-container ${turnClass || ''}`}>
         <div className="board chess-board">
           {rows.map((row, ri) => (
             <div key={ri} className="board-row">
@@ -123,10 +145,18 @@ export default function ChessBoard({ fen, myColor, isMyTurn, onMove, gameOver }:
                 if (isValid) className += ' valid-target';
                 if (isKingInCheck) className += ' in-check';
 
+                const isAnimTarget = animating && animating.row === actualRow && animating.col === actualCol;
+                const animStyle = isAnimTarget
+                  ? { transform: `translate(${animating!.dx * 100}%, ${animating!.dy * 100}%)` }
+                  : undefined;
+
                 return (
                   <div key={di} className={className} onClick={() => handleClick(ri, di)}>
                     {cell && (
-                      <span className={`piece ${cell.color === 'w' ? 'white-piece' : 'black-piece'}`}>
+                      <span
+                        className={`piece ${cell.color === 'w' ? 'white-piece' : 'black-piece'}${isAnimTarget ? ' piece-animate' : ''}`}
+                        style={animStyle}
+                      >
                         {PIECE_SYMBOLS[cell.color + cell.type]}
                       </span>
                     )}

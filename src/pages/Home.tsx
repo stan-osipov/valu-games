@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import { supabase, generateInviteCode } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { createInitialBoard, serializeBoard } from '../engine/checkers';
+import { createInitialBoard as createTTTBoard, serializeBoard as serializeTTTBoard } from '../engine/tictactoe';
 import type { GameType } from '../types';
 
 const GAMES = [
@@ -23,14 +24,24 @@ const GAMES = [
     gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
     players: '2 Players',
   },
+  {
+    type: 'tictactoe' as GameType,
+    title: 'Tic Tac Toe',
+    icon: 'fa-solid fa-hashtag',
+    description: 'Classic X and O. Get three in a row to win!',
+    gradient: 'linear-gradient(135deg, #00b894 0%, #00cec9 100%)',
+    players: '2 Players',
+  },
 ];
 
 export default function Home() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { userId } = useAuth();
   const [joinCode, setJoinCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const autoJoinRef = useRef(false);
 
   async function createGame(gameType: GameType) {
     setError('');
@@ -40,6 +51,8 @@ export default function Home() {
       const inviteCode = generateInviteCode();
       const boardState = gameType === 'chess'
         ? new Chess().fen()
+        : gameType === 'tictactoe'
+        ? serializeTTTBoard(createTTTBoard())
         : serializeBoard(createInitialBoard());
 
       const { error: dbError } = await supabase.from('games').insert({
@@ -62,9 +75,9 @@ export default function Home() {
     }
   }
 
-  async function joinGame() {
+  const joinWithCode = useCallback(async (rawCode: string) => {
     setError('');
-    const code = joinCode.trim().toUpperCase();
+    const code = rawCode.trim().toUpperCase();
     if (!code) {
       setError('Please enter an invite code');
       return;
@@ -111,7 +124,21 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  }, [userId, navigate]);
+
+  function joinGame() {
+    joinWithCode(joinCode);
   }
+
+  // Auto-join when navigated with ?join=CODE (from ValuVerse intent)
+  useEffect(() => {
+    const code = searchParams.get('join');
+    if (code && userId && !autoJoinRef.current) {
+      autoJoinRef.current = true;
+      setSearchParams({}, { replace: true });
+      joinWithCode(code);
+    }
+  }, [searchParams, setSearchParams, userId, joinWithCode]);
 
   return (
     <div className="home">

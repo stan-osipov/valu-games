@@ -10,16 +10,29 @@ import {
   getWinner,
   getValidMoves,
 } from '../engine/checkers';
+import {
+  deserializeBoard as deserializeTTT,
+  serializeBoard as serializeTTT,
+  applyMove as applyTTTMove,
+  getWinner as getTTTWinner,
+  isValidMove as isTTTValid,
+} from '../engine/tictactoe';
 import ChessBoard from '../components/ChessBoard';
 import CheckersBoard from '../components/CheckersBoard';
-import type { GameRow, Color, MovePayload, GameStatus, Winner } from '../types';
+import TicTacToeBoard from '../components/TicTacToeBoard';
+import GameOverModal from '../components/GameOverModal';
+import SettingsDialog from '../components/SettingsDialog';
+import type { GameRow, Color, MovePayload, GameStatus, Winner, LastMove } from '../types';
 import type { CheckerMove } from '../engine/checkers';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { TEST_MODE } from '../config';
+import { getDiceBearUrl } from '../utils/dicebear';
+import { playMoveSound, playTurnSound } from '../utils/sounds';
 
 export default function Game() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
-  const { userId: playerId } = useAuth();
+  const { userId: playerId, isValuVerse, avatarUrl: myAvatarUrl, nickname: myNickname } = useAuth();
 
   const [game, setGame] = useState<GameRow | null>(null);
   const [boardState, setBoardState] = useState<string>('');
@@ -29,6 +42,11 @@ export default function Game() {
   const [myColor, setMyColor] = useState<Color | null>(null);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [lastMove, setLastMove] = useState<LastMove | null>(null);
+  const [invitedUser, setInvitedUser] = useState<{ id: string; name: string; avatar: string } | null>(null);
+  const [loadingInvite, setLoadingInvite] = useState(false);
+  const [opponent, setOpponent] = useState<{ nickname: string; avatarUrl: string } | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const hasBroadcastJoin = useRef(false);
@@ -68,6 +86,39 @@ export default function Game() {
     loadGame();
   }, [loadGame]);
 
+  // Fetch opponent profile
+  useEffect(() => {
+    if (!game || !myColor) return;
+    const opponentId = myColor === 'white' ? game.player_black : game.player_white;
+    if (!opponentId) return;
+
+    supabase
+      .from('profiles')
+      .select('nickname, avatar_seed')
+      .eq('id', opponentId)
+      .maybeSingle()
+      .then(async ({ data }) => {
+        if (!data) return;
+        let avatarUrl = getDiceBearUrl(data.avatar_seed);
+
+        // In ValuVerse mode, avatar_seed holds the original Valu ID — fetch real avatar
+        if (isValuVerse) {
+          try {
+            const valuApi = (globalThis as any).valuApi;
+            if (valuApi) {
+              const usersApi = await valuApi.getApi('users');
+              const icon = await usersApi.run('get-icon', { userId: data.avatar_seed, size: 128 });
+              if (icon) avatarUrl = icon;
+            }
+          } catch {
+            // fallback to DiceBear
+          }
+        }
+
+        setOpponent({ nickname: data.nickname, avatarUrl });
+      });
+  }, [game, myColor, isValuVerse]);
+
   useEffect(() => {
     if (!code) return;
 
@@ -80,6 +131,26 @@ export default function Game() {
         setCurrentTurn(payload.turn);
         setStatus(payload.status);
         setWinner(payload.winner);
+
+        // Set lastMove from broadcast for animation
+        const m = payload.move as any;
+        if (m?.from && m?.to) {
+          if (typeof m.from === 'string') {
+            // Chess move
+            const fromRow = 8 - parseInt(m.from[1]);
+            const fromCol = m.from.charCodeAt(0) - 97;
+            const toRow = 8 - parseInt(m.to[1]);
+            const toCol = m.to.charCodeAt(0) - 97;
+            setLastMove({ from: { row: fromRow, col: fromCol }, to: { row: toRow, col: toCol } });
+          } else if (Array.isArray(m.from)) {
+            // Checkers move
+            setLastMove({
+              from: { row: m.from[0], col: m.from[1] },
+              to: { row: m.to[0], col: m.to[1] },
+              captures: m.captures?.map(([r, c]: [number, number]) => ({ row: r, col: c })),
+            });
+          }
+        }
       })
       .on('broadcast', { event: 'player_joined' }, () => {
         loadGame();
@@ -121,6 +192,15 @@ export default function Game() {
     newWinner: Winner,
     move: unknown,
   ) {
+    // In test mode, only update local state — skip Supabase and broadcast
+    if (TEST_MODE) {
+      setBoardState(newBoardState);
+      setCurrentTurn(newTurn);
+      setStatus(newStatus);
+      setWinner(newWinner);
+      return;
+    }
+
     const payload: MovePayload = {
       type: 'move',
       move,
@@ -173,7 +253,14 @@ export default function Game() {
         newWinner = 'draw';
       }
 
+      const fromRow = 8 - parseInt(from[1]);
+      const fromCol = from.charCodeAt(0) - 97;
+      const toRow = 8 - parseInt(to[1]);
+      const toCol = to.charCodeAt(0) - 97;
+      setLastMove({ from: { row: fromRow, col: fromCol }, to: { row: toRow, col: toCol } });
+
       broadcastAndPersist(newFen, newTurn, newStatus, newWinner, { from, to, promotion });
+      playMoveSound();
       return true;
     } catch {
       return false;
@@ -202,7 +289,32 @@ export default function Game() {
       newWinner = 'white';
     }
 
+    setLastMove({
+      from: { row: move.from[0], col: move.from[1] },
+      to: { row: move.to[0], col: move.to[1] },
+      captures: move.captures.map(([r, c]) => ({ row: r, col: c })),
+    });
+
     broadcastAndPersist(newBoardStr, newTurn, newStatus, newWinner, move);
+    playMoveSound();
+  }
+
+  function handleTicTacToeMove(index: number) {
+    const currentBoard = deserializeTTT(boardState);
+    if (!isTTTValid(currentBoard, index)) return;
+
+    const newBoard = applyTTTMove(currentBoard, index, currentTurn);
+    const newTurn: Color = currentTurn === 'white' ? 'black' : 'white';
+    const newBoardStr = serializeTTT(newBoard);
+
+    let newStatus: GameStatus = 'playing';
+    let newWinner: Winner = getTTTWinner(newBoard);
+    if (newWinner) {
+      newStatus = 'finished';
+    }
+
+    broadcastAndPersist(newBoardStr, newTurn, newStatus, newWinner, { index });
+    playMoveSound();
   }
 
   function copyInviteCode() {
@@ -213,8 +325,76 @@ export default function Game() {
     }
   }
 
-  const isMyTurn = myColor === currentTurn;
+  async function handleInvite() {
+    try {
+      const { Intent } = await import('@arkeytyp/valu-api') as any;
+      const valuApi = (globalThis as any).valuApi;
+      if (!valuApi) return;
+      const intent = new Intent('DataProvider', 'pick-single', {
+        providers: ['contacts'],
+        title: 'Invite to Game',
+        confirmLabel: 'Invite',
+      });
+      const selected = await valuApi.callService(intent);
+      if (!selected?.id) return;
+
+      // Show loader while fetching user info
+      setLoadingInvite(true);
+      try {
+        const usersApi = await valuApi.getApi('users');
+        const [userInfo, avatarUrl] = await Promise.all([
+          usersApi.run('get', selected.id),
+          usersApi.run('get-icon', { userId: selected.id, size: 128 }).catch(() => ''),
+        ]);
+
+        const name = userInfo
+          ? [userInfo.firstName, userInfo.lastName].filter(Boolean).join(' ').trim() || userInfo.name || 'User'
+          : selected.name || 'User';
+
+        setInvitedUser({ id: selected.id, name, avatar: avatarUrl || '' });
+
+        // Send rich message via TextChat with a Join button
+        const gameLabel = isChess ? 'Chess' : isCheckers ? 'Checkers' : 'Tic Tac Toe';
+        const msgIntent = new Intent('textchat', 'send-message', {
+          userId: selected.id,
+          text: `Join me for a game of ${gameLabel}!`,
+          buttons: [{
+            text: 'Join Game',
+            intent: {
+              applicationId: 'games',
+              action: 'join-game',
+              params: { code },
+            },
+          }],
+        });
+        valuApi.sendIntent(msgIntent).catch((e: any) =>
+          console.error('Failed to send invite message:', e)
+        );
+      } finally {
+        setLoadingInvite(false);
+      }
+    } catch (err) {
+      console.error('Invite picker failed:', err);
+    }
+  }
+
+  // TEST_MODE overrides: skip waiting, play both sides
+  const effectiveStatus = TEST_MODE && status === 'waiting' ? 'playing' : status;
+  const effectiveMyColor = TEST_MODE && !myColor ? 'white' : myColor;
+  const isMyTurn = TEST_MODE ? true : effectiveMyColor === currentTurn;
   const isChess = game?.game_type === 'chess';
+  const isCheckers = game?.game_type === 'checkers';
+  const turnClass = effectiveStatus === 'playing' ? (isMyTurn ? 'my-turn' : 'opponent-turn') : '';
+
+  // Play turn sound when it becomes my turn
+  const prevIsMyTurn = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (effectiveStatus !== 'playing') return;
+    if (prevIsMyTurn.current !== null && !prevIsMyTurn.current && isMyTurn) {
+      playTurnSound();
+    }
+    prevIsMyTurn.current = isMyTurn;
+  });
 
   if (error) {
     return (
@@ -230,7 +410,7 @@ export default function Game() {
     );
   }
 
-  if (!game || !myColor) {
+  if (!game || !effectiveMyColor) {
     return (
       <div className="game-page">
         <div className="loading-state">
@@ -241,28 +421,8 @@ export default function Game() {
     );
   }
 
-  const statusIcon = (() => {
-    if (status === 'waiting') return 'fa-solid fa-hourglass-half';
-    if (status === 'finished') {
-      if (winner === 'draw') return 'fa-solid fa-handshake';
-      if (winner === myColor) return 'fa-solid fa-trophy';
-      return 'fa-solid fa-flag';
-    }
-    return isMyTurn ? 'fa-solid fa-hand-pointer' : 'fa-solid fa-clock';
-  })();
-
-  const statusText = (() => {
-    if (status === 'waiting') return 'Waiting for opponent...';
-    if (status === 'finished') {
-      if (winner === 'draw') return 'Draw!';
-      if (winner === myColor) return 'You win!';
-      return 'You lose!';
-    }
-    return isMyTurn ? 'Your turn' : "Opponent's turn";
-  })();
-
   let mustCapture = false;
-  if (!isChess && status === 'playing' && isMyTurn) {
+  if (isCheckers && effectiveStatus === 'playing' && isMyTurn) {
     const moves = getValidMoves(deserializeBoard(boardState), currentTurn);
     mustCapture = moves.length > 0 && moves[0].captures.length > 0;
   }
@@ -274,100 +434,206 @@ export default function Game() {
           <i className="fa-solid fa-arrow-left"></i>
         </button>
         <div className="game-title">
-          <i className={isChess ? 'fa-solid fa-chess' : 'fa-solid fa-circle-dot'}></i>
-          <h2>{isChess ? 'Chess' : 'Checkers'}</h2>
+          <i className={isChess ? 'fa-solid fa-chess' : isCheckers ? 'fa-solid fa-circle-dot' : 'fa-solid fa-hashtag'}></i>
+          <h2>{isChess ? 'Chess' : isCheckers ? 'Checkers' : 'Tic Tac Toe'}</h2>
         </div>
         <button className="code-badge" onClick={copyInviteCode} title="Copy invite code">
           <i className={copied ? 'fa-solid fa-check' : 'fa-solid fa-copy'}></i>
           <span>{code}</span>
         </button>
+        <div style={{ position: 'relative' }}>
+          <button className="settings-btn" onClick={() => setSettingsOpen(o => !o)} title="Settings">
+            <i className="fa-solid fa-gear"></i>
+          </button>
+          <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+        </div>
       </div>
 
-      <div className="game-status-bar">
-        <div className={`player-badge ${myColor}`}>
-          <i className={myColor === 'white' ? 'fa-regular fa-circle' : 'fa-solid fa-circle'}></i>
-          {myColor}
-        </div>
-        <div className={`status-badge ${status} ${status === 'playing' && isMyTurn ? 'my-turn' : ''}`}>
-          <i className={statusIcon}></i>
-          {statusText}
-        </div>
-        {mustCapture && (
-          <div className="capture-badge">
-            <i className="fa-solid fa-crosshairs"></i> Must capture!
+      {effectiveStatus === 'playing' && (() => {
+        const showColor = isChess || isCheckers;
+        const opponentColor: Color = effectiveMyColor === 'white' ? 'black' : 'white';
+        return (
+          <div className="turn-bar">
+            <div className={`turn-bar-side ${currentTurn === opponentColor ? 'active' : ''}`}>
+              {opponent ? (
+                <img className="turn-bar-avatar" src={opponent.avatarUrl} alt="" />
+              ) : (
+                <div className="turn-bar-avatar placeholder">
+                  <i className="fa-solid fa-user"></i>
+                </div>
+              )}
+              <div className="turn-bar-info">
+                <span className="turn-bar-name">{opponent?.nickname || 'Opponent'}</span>
+                {showColor && (
+                  <span className={`turn-bar-color ${opponentColor}`}>
+                    <span className={`turn-dot ${opponentColor === 'white' ? 'white-dot' : 'black-dot'}`}></span>
+                    {opponentColor}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {isMyTurn ? (
+              <div className="turn-bar-label your-turn">YOUR TURN</div>
+            ) : (
+              <div className="turn-bar-label">waiting...</div>
+            )}
+
+            <div className={`turn-bar-side mine ${currentTurn === effectiveMyColor ? 'active' : ''}`}>
+              <div className="turn-bar-info right">
+                <span className="turn-bar-name">You</span>
+                {showColor && (
+                  <span className={`turn-bar-color ${effectiveMyColor}`}>
+                    <span className={`turn-dot ${effectiveMyColor === 'white' ? 'white-dot' : 'black-dot'}`}></span>
+                    {effectiveMyColor}
+                  </span>
+                )}
+              </div>
+              <img className="turn-bar-avatar" src={myAvatarUrl} alt="" />
+            </div>
           </div>
-        )}
-      </div>
+        );
+      })()}
 
-      {status === 'waiting' ? (
+      {effectiveStatus === 'playing' && mustCapture && (
+        <div className="capture-badge" style={{ marginBottom: '0.5rem' }}>
+          <i className="fa-solid fa-crosshairs"></i> Must capture!
+        </div>
+      )}
+
+      {effectiveStatus === 'waiting' ? (
         <div className="waiting-screen">
           <div className="waiting-animation">
             <div className="pulse-ring"></div>
             <div className="pulse-ring delay-1"></div>
             <div className="pulse-ring delay-2"></div>
             <div className="waiting-icon">
-              <i className={isChess ? 'fa-solid fa-chess-knight' : 'fa-solid fa-circle-dot'}></i>
+              <i className={isChess ? 'fa-solid fa-chess-knight' : isCheckers ? 'fa-solid fa-circle-dot' : 'fa-solid fa-hashtag'}></i>
             </div>
           </div>
 
           <h3>Waiting for opponent</h3>
-          <p className="waiting-subtitle">Share the invite code below with a friend</p>
 
-          <button className="invite-code-card" onClick={copyInviteCode}>
-            <div className="invite-code-digits">
-              {code?.split('').map((char, i) => (
-                <span key={i} className="code-char">{char}</span>
-              ))}
-            </div>
-            <div className="invite-code-action">
-              <i className={copied ? 'fa-solid fa-check' : 'fa-regular fa-copy'}></i>
-              {copied ? 'Copied!' : 'Tap to copy'}
-            </div>
-          </button>
+          {isValuVerse && !invitedUser && !loadingInvite && (
+            <>
+              <p className="waiting-subtitle">Invite someone to play</p>
+              <button className="valu-invite-btn" onClick={handleInvite}>
+                <i className="fa-solid fa-user-plus"></i>
+                Invite
+              </button>
+              <div className="waiting-divider">
+                <span>or share code</span>
+              </div>
+            </>
+          )}
 
-          <div className="waiting-tips">
-            <div className="tip">
-              <i className="fa-solid fa-share-nodes"></i>
-              Send this code to your friend
+          {isValuVerse && loadingInvite && (
+            <div className="invite-loading">
+              <i className="fa-solid fa-spinner fa-spin"></i>
+              <span>Loading contact...</span>
             </div>
-            <div className="tip">
-              <i className="fa-solid fa-right-to-bracket"></i>
-              They enter it on the home page
+          )}
+
+          {isValuVerse && invitedUser && !loadingInvite && (
+            <>
+              <p className="waiting-subtitle">Invitation sent</p>
+              <div className="invited-contact-card">
+                {invitedUser.avatar ? (
+                  <img className="invited-contact-avatar" src={invitedUser.avatar} alt="" />
+                ) : (
+                  <div className="invited-contact-avatar placeholder">
+                    <i className="fa-solid fa-user"></i>
+                  </div>
+                )}
+                <div className="invited-contact-info">
+                  <span className="invited-contact-name">{invitedUser.name}</span>
+                  <span className="invited-contact-status">
+                    <i className="fa-solid fa-paper-plane"></i> Waiting for them to join...
+                  </span>
+                </div>
+              </div>
+              <button className="valu-invite-change" onClick={handleInvite}>
+                <i className="fa-solid fa-user-plus"></i> Invite someone else
+              </button>
+            </>
+          )}
+
+          {isValuVerse ? (
+            <div className="code-fallback">
+              <button className="code-fallback-code" onClick={copyInviteCode} title="Tap to copy">
+                {code}
+                <i className={copied ? 'fa-solid fa-check' : 'fa-regular fa-copy'}></i>
+              </button>
+              <p className="code-fallback-hint">
+                Your friend can also join by entering this code on the home screen
+              </p>
             </div>
-            <div className="tip">
-              <i className="fa-solid fa-play"></i>
-              Game starts automatically
-            </div>
-          </div>
+          ) : (
+            <>
+              <p className="waiting-subtitle">Share the invite code below with a friend</p>
+
+              <button className="invite-code-card" onClick={copyInviteCode}>
+                <div className="invite-code-digits">
+                  {code?.split('').map((char, i) => (
+                    <span key={i} className="code-char">{char}</span>
+                  ))}
+                </div>
+                <div className="invite-code-action">
+                  <i className={copied ? 'fa-solid fa-check' : 'fa-regular fa-copy'}></i>
+                  {copied ? 'Copied!' : 'Tap to copy'}
+                </div>
+              </button>
+
+              <div className="waiting-tips">
+                <div className="tip">
+                  <i className="fa-solid fa-share-nodes"></i>
+                  Send this code to your friend
+                </div>
+                <div className="tip">
+                  <i className="fa-solid fa-right-to-bracket"></i>
+                  They enter it on the home page
+                </div>
+                <div className="tip">
+                  <i className="fa-solid fa-play"></i>
+                  Game starts automatically
+                </div>
+              </div>
+            </>
+          )}
         </div>
       ) : isChess ? (
         <ChessBoard
           fen={boardState}
-          myColor={myColor}
+          myColor={effectiveMyColor}
           isMyTurn={isMyTurn}
           onMove={handleChessMove}
-          gameOver={status === 'finished'}
+          gameOver={effectiveStatus === 'finished'}
+          turnClass={turnClass}
+          lastMove={lastMove}
         />
-      ) : (
+      ) : isCheckers ? (
         <CheckersBoard
           board={deserializeBoard(boardState)}
-          myColor={myColor}
+          myColor={effectiveMyColor}
           isMyTurn={isMyTurn}
           onMove={handleCheckersMove}
-          gameOver={status === 'finished'}
+          gameOver={effectiveStatus === 'finished'}
+          turnClass={turnClass}
+          lastMove={lastMove}
+        />
+      ) : (
+        <TicTacToeBoard
+          board={deserializeTTT(boardState)}
+          myColor={effectiveMyColor}
+          isMyTurn={isMyTurn}
+          onMove={handleTicTacToeMove}
+          gameOver={effectiveStatus === 'finished'}
+          turnClass={turnClass}
         />
       )}
 
-      {status === 'finished' && (
-        <div className="game-over-actions">
-          <div className={`result-banner ${winner === myColor ? 'win' : winner === 'draw' ? 'draw' : 'lose'}`}>
-            <i className={winner === myColor ? 'fa-solid fa-trophy' : winner === 'draw' ? 'fa-solid fa-handshake' : 'fa-solid fa-flag'}></i>
-            <span>{winner === myColor ? 'Victory!' : winner === 'draw' ? 'Draw Game' : 'Defeat'}</span>
-          </div>
-          <button className="new-game-btn" onClick={() => navigate('/')}>
-            <i className="fa-solid fa-rotate-right"></i> Play Again
-          </button>
-        </div>
+      {effectiveStatus === 'finished' && winner && (
+        <GameOverModal winner={winner} myColor={effectiveMyColor} />
       )}
     </div>
   );

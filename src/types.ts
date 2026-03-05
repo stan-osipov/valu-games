@@ -1,4 +1,4 @@
-export type GameType = 'chess' | 'checkers';
+export type GameType = 'chess' | 'checkers' | 'tictactoe';
 export type GameStatus = 'waiting' | 'playing' | 'finished';
 export type Color = 'white' | 'black';
 export type Winner = 'white' | 'black' | 'draw' | null;
@@ -24,6 +24,17 @@ export interface MovePayload {
   status: GameStatus;
   winner: Winner;
 }
+
+// Move animation
+export interface LastMove {
+  from: { row: number; col: number };
+  to: { row: number; col: number };
+  captures?: { row: number; col: number }[];
+}
+
+// Tic Tac Toe types
+export type TicTacToeCell = 'X' | 'O' | null;
+export type TicTacToeBoard = TicTacToeCell[];
 
 // Checkers types
 export type CheckerPiece = 'w' | 'W' | 'b' | 'B' | null; // lowercase = normal, uppercase = king

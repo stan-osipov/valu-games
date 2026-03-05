@@ -10,6 +10,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'overall', label: 'Overall', icon: 'fa-solid fa-trophy' },
   { key: 'chess', label: 'Chess', icon: 'fa-solid fa-chess' },
   { key: 'checkers', label: 'Checkers', icon: 'fa-solid fa-circle-dot' },
+  { key: 'tictactoe', label: 'Tic Tac Toe', icon: 'fa-solid fa-hashtag' },
 ];
 
 function RankBadge({ rank }: { rank: number }) {
@@ -60,10 +61,10 @@ function LeaderboardTable({ entries, currentUserId }: { entries: LeaderboardEntr
 export default function Leaderboard() {
   const navigate = useNavigate();
   const { userId } = useAuth();
-  const { overall, chess, checkers, loading } = useLeaderboard();
+  const { overall, chess, checkers, tictactoe, loading } = useLeaderboard();
   const [tab, setTab] = useState<Tab>('overall');
 
-  const entries = tab === 'chess' ? chess : tab === 'checkers' ? checkers : overall;
+  const entries = tab === 'chess' ? chess : tab === 'checkers' ? checkers : tab === 'tictactoe' ? tictactoe : overall;
 
   return (
     <div className="profile-page">

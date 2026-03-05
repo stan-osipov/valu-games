@@ -44,7 +44,7 @@ export default function Profile() {
     loginWithId,
   } = useAuth();
 
-  const { total, chess, checkers, recentGames, loading: statsLoading } = usePlayerStats(userId);
+  const { total, chess, checkers, tictactoe, recentGames, loading: statsLoading } = usePlayerStats(userId);
 
   const [editName, setEditName] = useState(nickname);
   const [loginId, setLoginId] = useState('');
@@ -212,6 +212,13 @@ export default function Profile() {
                 <span className="stat-lose">{checkers.losses}L</span>
                 <span className="stat-draw">{checkers.draws}D</span>
               </div>
+              <div className="profile-game-stat-row">
+                <i className="fa-solid fa-hashtag"></i>
+                <span className="profile-game-stat-label">Tic Tac Toe</span>
+                <span className="stat-win">{tictactoe.wins}W</span>
+                <span className="stat-lose">{tictactoe.losses}L</span>
+                <span className="stat-draw">{tictactoe.draws}D</span>
+              </div>
             </div>
           </>
         )}
@@ -236,7 +243,9 @@ export default function Profile() {
                   className={
                     g.game_type === 'chess'
                       ? 'fa-solid fa-chess'
-                      : 'fa-solid fa-circle-dot'
+                      : g.game_type === 'checkers'
+                      ? 'fa-solid fa-circle-dot'
+                      : 'fa-solid fa-hashtag'
                   }
                 ></i>
                 <ResultBadge game={g} userId={userId} />

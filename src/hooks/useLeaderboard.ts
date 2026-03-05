@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
+import { useAuth } from '../contexts/AuthContext';
 import { getDiceBearUrl } from '../utils/dicebear';
 import type { GameRow, GameType } from '../types';
 
@@ -18,14 +19,17 @@ interface LeaderboardData {
   overall: LeaderboardEntry[];
   chess: LeaderboardEntry[];
   checkers: LeaderboardEntry[];
+  tictactoe: LeaderboardEntry[];
   loading: boolean;
 }
 
 export function useLeaderboard(): LeaderboardData {
+  const { isValuVerse } = useAuth();
   const [data, setData] = useState<LeaderboardData>({
     overall: [],
     chess: [],
     checkers: [],
+    tictactoe: [],
     loading: true,
   });
 
@@ -62,6 +66,26 @@ export function useLeaderboard(): LeaderboardData {
         profileMap.set(p.id, { nickname: p.nickname, avatar_seed: p.avatar_seed });
       }
 
+      // In ValuVerse mode, fetch real avatars from Valu API
+      const valuAvatarMap = new Map<string, string>();
+      if (isValuVerse) {
+        try {
+          const valuApi = (globalThis as any).valuApi;
+          if (valuApi) {
+            const usersApi = await valuApi.getApi('users');
+            const results = await Promise.allSettled(
+              [...profileMap.entries()].map(async ([id, p]) => {
+                const icon = await usersApi.run('get-icon', { userId: p.avatar_seed, size: 80 });
+                if (icon) valuAvatarMap.set(id, icon);
+              })
+            );
+            void results;
+          }
+        } catch {
+          // fallback to DiceBear
+        }
+      }
+
       function buildLeaderboard(gameType?: GameType): LeaderboardEntry[] {
         const statsMap = new Map<string, { wins: number; losses: number; draws: number }>();
 
@@ -93,7 +117,7 @@ export function useLeaderboard(): LeaderboardData {
           entries.push({
             id,
             nickname: profile?.nickname ?? id.slice(0, 8) + '...',
-            avatarUrl: getDiceBearUrl(profile?.avatar_seed ?? id),
+            avatarUrl: valuAvatarMap.get(id) || getDiceBearUrl(profile?.avatar_seed ?? id),
             wins: s.wins,
             losses: s.losses,
             draws: s.draws,
@@ -111,12 +135,13 @@ export function useLeaderboard(): LeaderboardData {
         overall: buildLeaderboard(),
         chess: buildLeaderboard('chess'),
         checkers: buildLeaderboard('checkers'),
+        tictactoe: buildLeaderboard('tictactoe'),
         loading: false,
       });
     }
 
     fetch();
-  }, []);
+  }, [isValuVerse]);
 
   return data;
 }

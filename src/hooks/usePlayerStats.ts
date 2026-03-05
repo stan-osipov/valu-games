@@ -12,6 +12,7 @@ interface PlayerStats {
   total: Stats;
   chess: Stats;
   checkers: Stats;
+  tictactoe: Stats;
   recentGames: GameRow[];
   loading: boolean;
 }
@@ -45,6 +46,7 @@ export function usePlayerStats(userId: string): PlayerStats {
     total: emptyStats(),
     chess: emptyStats(),
     checkers: emptyStats(),
+    tictactoe: emptyStats(),
     recentGames: [],
     loading: true,
   });
@@ -68,6 +70,7 @@ export function usePlayerStats(userId: string): PlayerStats {
         total: computeStats(games, userId),
         chess: computeStats(games, userId, 'chess'),
         checkers: computeStats(games, userId, 'checkers'),
+        tictactoe: computeStats(games, userId, 'tictactoe'),
         recentGames: recent,
         loading: false,
       });
