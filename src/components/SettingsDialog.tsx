@@ -3,9 +3,10 @@ import { useState, useEffect, useRef } from 'react';
 interface Props {
   open: boolean;
   onClose: () => void;
+  anchorRef?: React.RefObject<HTMLElement | null>;
 }
 
-export default function SettingsDialog({ open, onClose }: Props) {
+export default function SettingsDialog({ open, onClose, anchorRef }: Props) {
   const [moveSounds, setMoveSounds] = useState(() => localStorage.getItem('sound_moves') !== 'false');
   const [turnDing, setTurnDing] = useState(() => localStorage.getItem('sound_turn') !== 'false');
   const ref = useRef<HTMLDivElement>(null);
@@ -13,13 +14,14 @@ export default function SettingsDialog({ open, onClose }: Props) {
   useEffect(() => {
     if (!open) return;
     function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        onClose();
-      }
+      const target = e.target as Node;
+      if (ref.current?.contains(target)) return;
+      if (anchorRef?.current?.contains(target)) return;
+      onClose();
     }
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
-  }, [open, onClose]);
+  }, [open, onClose, anchorRef]);
 
   if (!open) return null;
 

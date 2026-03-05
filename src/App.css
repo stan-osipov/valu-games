@@ -1160,6 +1160,10 @@
 }
 
 /* ========== Settings ========== */
+.settings-wrapper {
+  position: relative;
+}
+
 .settings-btn {
   width: 38px;
   height: 38px;

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Color, Winner } from '../types';
+import { playWinSound, playLoseSound } from '../utils/sounds';
 
 interface Props {
   winner: Winner;
@@ -15,9 +16,13 @@ export default function GameOverModal({ winner, myColor }: Props) {
   const isDraw = winner === 'draw';
 
   useEffect(() => {
-    const timer = setTimeout(() => setVisible(true), 500);
+    const timer = setTimeout(() => {
+      setVisible(true);
+      if (isWin) playWinSound();
+      else if (!isDraw) playLoseSound();
+    }, 500);
     return () => clearTimeout(timer);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!visible) return null;
 

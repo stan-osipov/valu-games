@@ -47,6 +47,7 @@ export default function Game() {
   const [loadingInvite, setLoadingInvite] = useState(false);
   const [opponent, setOpponent] = useState<{ nickname: string; avatarUrl: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsBtnRef = useRef<HTMLDivElement>(null);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const hasBroadcastJoin = useRef(false);
@@ -441,11 +442,11 @@ export default function Game() {
           <i className={copied ? 'fa-solid fa-check' : 'fa-solid fa-copy'}></i>
           <span>{code}</span>
         </button>
-        <div style={{ position: 'relative' }}>
+        <div className="settings-wrapper" ref={settingsBtnRef}>
           <button className="settings-btn" onClick={() => setSettingsOpen(o => !o)} title="Settings">
             <i className="fa-solid fa-gear"></i>
           </button>
-          <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+          <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} anchorRef={settingsBtnRef} />
         </div>
       </div>
 
