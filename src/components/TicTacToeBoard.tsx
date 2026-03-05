@@ -11,7 +11,7 @@ interface Props {
   turnClass?: string;
 }
 
-export default function TicTacToeBoard({ board, myColor, isMyTurn, onMove, gameOver, turnClass }: Props) {
+export default function TicTacToeBoard({ board, isMyTurn, onMove, gameOver, turnClass }: Props) {
   const [lastPlaced, setLastPlaced] = useState<number | null>(null);
   const winLine = getWinningLine(board);
   const winSet = winLine ? new Set(winLine) : null;

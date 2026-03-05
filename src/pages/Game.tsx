@@ -32,7 +32,7 @@ import { playMoveSound, playTurnSound } from '../utils/sounds';
 export default function Game() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
-  const { userId: playerId, isValuVerse, avatarUrl: myAvatarUrl, nickname: myNickname } = useAuth();
+  const { userId: playerId, isValuVerse, avatarUrl: myAvatarUrl } = useAuth();
 
   const [game, setGame] = useState<GameRow | null>(null);
   const [boardState, setBoardState] = useState<string>('');
