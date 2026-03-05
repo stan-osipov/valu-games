@@ -44,7 +44,12 @@ function LeaderboardTable({ entries, currentUserId }: { entries: LeaderboardEntr
             <RankBadge rank={i + 1} />
           </span>
           <span className="lb-col-player">
-            <img src={entry.avatarUrl} alt="" className="lb-avatar" />
+            <img
+              src={entry.avatarUrl}
+              alt=""
+              className="lb-avatar"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            />
             <span className="lb-name">{entry.nickname}</span>
             {entry.id === currentUserId && <span className="lb-you-badge">You</span>}
           </span>

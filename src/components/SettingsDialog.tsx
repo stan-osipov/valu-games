@@ -1,27 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  anchorRef?: React.RefObject<HTMLElement | null>;
 }
 
-export default function SettingsDialog({ open, onClose, anchorRef }: Props) {
+export default function SettingsDialog({ open, onClose }: Props) {
   const [moveSounds, setMoveSounds] = useState(() => localStorage.getItem('sound_moves') !== 'false');
   const [turnDing, setTurnDing] = useState(() => localStorage.getItem('sound_turn') !== 'false');
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function handleClick(e: MouseEvent) {
-      const target = e.target as Node;
-      if (ref.current?.contains(target)) return;
-      if (anchorRef?.current?.contains(target)) return;
-      onClose();
-    }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [open, onClose, anchorRef]);
 
   if (!open) return null;
 
@@ -38,18 +24,29 @@ export default function SettingsDialog({ open, onClose, anchorRef }: Props) {
   }
 
   return (
-    <div className="settings-dialog" ref={ref}>
-      <div className="settings-toggle" onClick={toggleMove}>
-        <span>Move sounds</span>
-        <div className={`toggle-switch ${moveSounds ? 'on' : ''}`}>
-          <div className="toggle-knob" />
+    <div className="game-over-overlay" onClick={onClose}>
+      <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="settings-modal-header">
+          <i className="fa-solid fa-gear"></i>
+          <h2>Settings</h2>
         </div>
-      </div>
-      <div className="settings-toggle" onClick={toggleTurn}>
-        <span>Turn ding</span>
-        <div className={`toggle-switch ${turnDing ? 'on' : ''}`}>
-          <div className="toggle-knob" />
+
+        <div className="settings-toggle" onClick={toggleMove}>
+          <span>Move sounds</span>
+          <div className={`toggle-switch ${moveSounds ? 'on' : ''}`}>
+            <div className="toggle-knob" />
+          </div>
         </div>
+        <div className="settings-toggle" onClick={toggleTurn}>
+          <span>Turn ding</span>
+          <div className={`toggle-switch ${turnDing ? 'on' : ''}`}>
+            <div className="toggle-knob" />
+          </div>
+        </div>
+
+        <button className="game-over-btn secondary" onClick={onClose} style={{ marginTop: '0.5rem', width: '100%' }}>
+          Done
+        </button>
       </div>
     </div>
   );

@@ -1165,10 +1165,6 @@
 }
 
 /* ========== Settings ========== */
-.settings-wrapper {
-  position: relative;
-}
-
 .settings-btn {
   display: flex;
   align-items: center;
@@ -1190,27 +1186,46 @@
   transform: none;
 }
 
-.settings-dialog {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 100;
+.settings-modal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1.5rem 2rem;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 0.5rem;
-  min-width: 180px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  border-radius: 20px;
+  min-width: 260px;
+  max-width: 320px;
+  animation: modal-entrance 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.settings-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.settings-modal-header i {
+  font-size: 1.1em;
+  color: var(--accent-light);
+}
+
+.settings-modal-header h2 {
+  margin: 0;
+  font-size: 1.1em;
+  font-weight: 700;
 }
 
 .settings-toggle {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.5rem 0.6rem;
+  padding: 0.6rem 0.5rem;
   border-radius: 8px;
   cursor: pointer;
-  font-size: 0.82em;
+  font-size: 0.88em;
   font-weight: 500;
   color: var(--text-primary);
   transition: background 0.15s;

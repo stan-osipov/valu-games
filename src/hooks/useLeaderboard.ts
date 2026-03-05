@@ -67,19 +67,24 @@ export function useLeaderboard(): LeaderboardData {
       }
 
       // In ValuVerse mode, fetch real avatars from Valu API
+      // Only attempt for seeds that look like Valu IDs (longer than 8 chars)
+      // Normal users have 8-char hex seeds from generateAvatarSeed()
       const valuAvatarMap = new Map<string, string>();
       if (isValuVerse) {
         try {
           const valuApi = (globalThis as any).valuApi;
           if (valuApi) {
             const usersApi = await valuApi.getApi('users');
+            const valuEntries = [...profileMap.entries()].filter(
+              ([, p]) => p.avatar_seed && p.avatar_seed.length > 8
+            );
             await Promise.allSettled(
-              [...profileMap.entries()].map(async ([id, p]) => {
+              valuEntries.map(async ([id, p]) => {
                 try {
                   const icon = await usersApi.run('get-icon', { userId: p.avatar_seed, size: 80 });
                   if (icon) valuAvatarMap.set(id, icon);
                 } catch {
-                  // Non-Valu user — skip, will use DiceBear fallback
+                  // Not found in Valu — skip
                 }
               })
             );
