@@ -2861,6 +2861,64 @@
   color: var(--accent-light);
 }
 
+/* Bomber: Lobby invite */
+.bomber-lobby-invite {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+}
+
+.bomber-lobby-invite .valu-invite-btn {
+  width: 100%;
+}
+
+.bomber-lobby-invite .waiting-divider {
+  width: 100%;
+}
+
+.bomber-invited-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.bomber-invited-user {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  background: rgba(255,255,255,0.04);
+  border-radius: 8px;
+  font-size: 0.85em;
+  color: var(--text-primary);
+}
+
+.bomber-invited-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.bomber-invited-avatar.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.08);
+  color: var(--text-secondary);
+  font-size: 0.7em;
+}
+
+.bomber-invited-sent {
+  margin-left: auto;
+  color: var(--accent-light);
+  font-size: 0.75em;
+}
+
 /* Bomber: How to Play (lobby) */
 .bomber-howto {
   background: var(--surface);

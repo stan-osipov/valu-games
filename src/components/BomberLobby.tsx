@@ -1,6 +1,12 @@
 import { PLAYER_COLORS } from '../engine/bomber';
 import type { BomberPlayer } from '../types';
 
+interface InvitedUser {
+  id: string;
+  name: string;
+  avatar: string;
+}
+
 interface Props {
   players: BomberPlayer[];
   isHost: boolean;
@@ -8,9 +14,13 @@ interface Props {
   inviteCode: string;
   copied: boolean;
   onCopy: () => void;
+  isValuVerse: boolean;
+  onInvite: () => void;
+  loadingInvite: boolean;
+  invitedUsers: InvitedUser[];
 }
 
-export default function BomberLobby({ players, isHost, onStart, inviteCode, copied, onCopy }: Props) {
+export default function BomberLobby({ players, isHost, onStart, inviteCode, copied, onCopy, isValuVerse, onInvite, loadingInvite, invitedUsers }: Props) {
   const canStart = players.length >= 2;
 
   return (
@@ -45,7 +55,38 @@ export default function BomberLobby({ players, isHost, onStart, inviteCode, copi
         )}
       </div>
 
-      <div className="bomber-lobby-code">
+      <div className="bomber-lobby-invite">
+        {isValuVerse && (
+          <>
+            <button className="valu-invite-btn" onClick={onInvite} disabled={loadingInvite}>
+              {loadingInvite ? (
+                <><i className="fa-solid fa-spinner fa-spin"></i> Loading...</>
+              ) : (
+                <><i className="fa-solid fa-user-plus"></i> Invite</>
+              )}
+            </button>
+            {invitedUsers.length > 0 && (
+              <div className="bomber-invited-list">
+                {invitedUsers.map((u) => (
+                  <div key={u.id} className="bomber-invited-user">
+                    {u.avatar ? (
+                      <img className="bomber-invited-avatar" src={u.avatar} alt="" />
+                    ) : (
+                      <div className="bomber-invited-avatar placeholder">
+                        <i className="fa-solid fa-user"></i>
+                      </div>
+                    )}
+                    <span>{u.name}</span>
+                    <i className="fa-solid fa-paper-plane bomber-invited-sent"></i>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="waiting-divider">
+              <span>or share code</span>
+            </div>
+          </>
+        )}
         <button className="invite-code-card" onClick={onCopy}>
           <div className="invite-code-digits">
             {inviteCode.split('').map((char, i) => (

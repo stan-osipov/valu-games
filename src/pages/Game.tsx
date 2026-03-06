@@ -62,6 +62,9 @@ export default function Game() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [resignConfirm, setResignConfirm] = useState(false);
 
+  // Bomber invite state (supports multiple invites)
+  const [bomberInvitedUsers, setBomberInvitedUsers] = useState<{ id: string; name: string; avatar: string }[]>([]);
+
   // Bomber-specific state
   const [bomberPlayers, setBomberPlayers] = useState<BomberPlayer[]>([]);
   const [bomberGrid, setBomberGrid] = useState<BomberGrid | null>(null);
@@ -497,7 +500,7 @@ export default function Game() {
     }
   }
 
-  async function handleInvite() {
+  async function sendInvite(forBomber: boolean) {
     try {
       const { Intent } = await import('@arkeytyp/valu-api') as any;
       const valuApi = (globalThis as any).valuApi;
@@ -523,7 +526,14 @@ export default function Game() {
           ? [userInfo.firstName, userInfo.lastName].filter(Boolean).join(' ').trim() || userInfo.name || 'User'
           : selected.name || 'User';
 
-        setInvitedUser({ id: selected.id, name, avatar: avatarUrl || '' });
+        const user = { id: selected.id, name, avatar: avatarUrl || '' };
+        if (forBomber) {
+          setBomberInvitedUsers(prev =>
+            prev.some(u => u.id === user.id) ? prev : [...prev, user]
+          );
+        } else {
+          setInvitedUser(user);
+        }
 
         // Send rich message via TextChat with a Join button
         const gameLabel = isChess ? 'Chess' : isCheckers ? 'Checkers' : isBomber ? 'Bomber' : 'Tic Tac Toe';
@@ -549,6 +559,9 @@ export default function Game() {
       console.error('Invite picker failed:', err);
     }
   }
+
+  function handleInvite() { sendInvite(false); }
+  function handleBomberInvite() { sendInvite(true); }
 
   // TEST_MODE overrides: skip waiting, play both sides
   const effectiveStatus = TEST_MODE && status === 'waiting' ? 'playing' : status;
@@ -641,6 +654,10 @@ export default function Game() {
             inviteCode={code || ''}
             copied={copied}
             onCopy={copyInviteCode}
+            isValuVerse={isValuVerse}
+            onInvite={handleBomberInvite}
+            loadingInvite={loadingInvite}
+            invitedUsers={bomberInvitedUsers}
           />
         )}
       </div>
