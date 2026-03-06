@@ -29,7 +29,6 @@ interface Props {
   playerId: string;
   initialGrid: BomberGrid;
   initialPlayers: BomberPlayer[];
-  isTestMode: boolean;
 }
 
 // Deterministic RNG so all clients produce the same powerups
@@ -47,7 +46,6 @@ export default function BomberGame({
   playerId,
   initialGrid,
   initialPlayers,
-  isTestMode,
 }: Props) {
   const navigate = useNavigate();
   const [grid, setGrid] = useState<BomberGrid>(initialGrid);

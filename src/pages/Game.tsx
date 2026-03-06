@@ -632,7 +632,6 @@ export default function Game() {
             playerId={playerId}
             initialGrid={bomberGrid}
             initialPlayers={bomberPlayers}
-            isTestMode={TEST_MODE}
           />
         ) : (
           <BomberLobby
@@ -838,7 +837,7 @@ export default function Game() {
       ) : isChess ? (
         <ChessBoard
           fen={boardState}
-          myColor={effectiveMyColor}
+          myColor={effectiveMyColor!}
           isMyTurn={isMyTurn}
           onMove={handleChessMove}
           gameOver={effectiveStatus === 'finished'}
@@ -848,7 +847,7 @@ export default function Game() {
       ) : isCheckers ? (
         <CheckersBoard
           board={deserializeBoard(boardState)}
-          myColor={effectiveMyColor}
+          myColor={effectiveMyColor!}
           isMyTurn={isMyTurn}
           onMove={handleCheckersMove}
           gameOver={effectiveStatus === 'finished'}
@@ -859,7 +858,7 @@ export default function Game() {
       ) : (
         <TicTacToeBoard
           board={deserializeTTT(boardState)}
-          myColor={effectiveMyColor}
+          myColor={effectiveMyColor!}
           isMyTurn={isMyTurn}
           onMove={handleTicTacToeMove}
           gameOver={effectiveStatus === 'finished'}
@@ -868,7 +867,7 @@ export default function Game() {
       )}
 
       {effectiveStatus === 'finished' && winner && (
-        <GameOverModal winner={winner} myColor={effectiveMyColor} />
+        <GameOverModal winner={winner} myColor={effectiveMyColor!} />
       )}
     </div>
   );
