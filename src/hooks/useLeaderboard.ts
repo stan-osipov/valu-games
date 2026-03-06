@@ -20,6 +20,7 @@ interface LeaderboardData {
   chess: LeaderboardEntry[];
   checkers: LeaderboardEntry[];
   tictactoe: LeaderboardEntry[];
+  bomber: LeaderboardEntry[];
   loading: boolean;
 }
 
@@ -30,6 +31,7 @@ export function useLeaderboard(): LeaderboardData {
     chess: [],
     checkers: [],
     tictactoe: [],
+    bomber: [],
     loading: true,
   });
 
@@ -102,14 +104,29 @@ export function useLeaderboard(): LeaderboardData {
           : (games as GameRow[]);
 
         for (const g of filtered) {
-          const players = [g.player_white, g.player_black].filter(Boolean) as string[];
+          // For bomber games, extract players from board_state JSON
+          let playerIdList: string[];
+          if (g.game_type === 'bomber') {
+            try {
+              const state = JSON.parse(g.board_state);
+              playerIdList = (state.players || []).map((p: any) => p.id).filter(Boolean);
+            } catch {
+              playerIdList = [g.player_white].filter(Boolean) as string[];
+            }
+          } else {
+            playerIdList = [g.player_white, g.player_black].filter(Boolean) as string[];
+          }
 
-          for (const pid of players) {
+          for (const pid of playerIdList) {
             if (!statsMap.has(pid)) statsMap.set(pid, { wins: 0, losses: 0, draws: 0 });
             const s = statsMap.get(pid)!;
 
             if (g.winner === 'draw') {
               s.draws++;
+            } else if (g.game_type === 'bomber') {
+              // Bomber winner is a player ID string
+              if (g.winner === pid) s.wins++;
+              else s.losses++;
             } else {
               const myColor = g.player_white === pid ? 'white' : 'black';
               if (g.winner === myColor) s.wins++;
@@ -144,6 +161,7 @@ export function useLeaderboard(): LeaderboardData {
         chess: buildLeaderboard('chess'),
         checkers: buildLeaderboard('checkers'),
         tictactoe: buildLeaderboard('tictactoe'),
+        bomber: buildLeaderboard('bomber'),
         loading: false,
       });
     }

@@ -32,6 +32,14 @@ const GAMES = [
     gradient: 'linear-gradient(135deg, #00b894 0%, #00cec9 100%)',
     players: '2 Players',
   },
+  {
+    type: 'bomber' as GameType,
+    title: 'Bomber',
+    icon: 'fa-solid fa-bomb',
+    description: 'Place bombs, dodge explosions. Last one standing wins!',
+    gradient: 'linear-gradient(135deg, #e74c3c 0%, #f39c12 100%)',
+    players: '2-10 Players',
+  },
 ];
 
 export default function Home() {
@@ -53,6 +61,8 @@ export default function Home() {
         ? new Chess().fen()
         : gameType === 'tictactoe'
         ? serializeTTTBoard(createTTTBoard())
+        : gameType === 'bomber'
+        ? JSON.stringify({ players: [], grid: null, bombs: [], explosions: [], startedAt: 0, gameTime: 180 })
         : serializeBoard(createInitialBoard());
 
       const { error: dbError } = await supabase.from('games').insert({
@@ -99,6 +109,16 @@ export default function Home() {
       }
 
       if (game.player_white === playerId) {
+        navigate(`/game/${code}`);
+        return;
+      }
+
+      // Bomber games use broadcast for joining (multi-player), just navigate
+      if (game.game_type === 'bomber') {
+        if (game.status === 'finished') {
+          setError('Game has already ended');
+          return;
+        }
         navigate(`/game/${code}`);
         return;
       }

@@ -20,9 +20,12 @@ import {
 import ChessBoard from '../components/ChessBoard';
 import CheckersBoard from '../components/CheckersBoard';
 import TicTacToeBoard from '../components/TicTacToeBoard';
+import BomberLobby from '../components/BomberLobby';
+import BomberGame from '../components/BomberGame';
 import GameOverModal from '../components/GameOverModal';
 import SettingsDialog from '../components/SettingsDialog';
-import type { GameRow, Color, MovePayload, GameStatus, Winner, LastMove } from '../types';
+import { generateGrid, getSpawnPositions, PLAYER_COLORS } from '../engine/bomber';
+import type { GameRow, Color, MovePayload, GameStatus, Winner, LastMove, BomberPlayer, BomberGrid } from '../types';
 import type { CheckerMove } from '../engine/checkers';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { TEST_MODE } from '../config';
@@ -57,10 +60,23 @@ export default function Game() {
   const [loadingInvite, setLoadingInvite] = useState(false);
   const [opponent, setOpponent] = useState<{ nickname: string; avatarUrl: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [resignConfirm, setResignConfirm] = useState(false);
+
+  // Bomber-specific state
+  const [bomberPlayers, setBomberPlayers] = useState<BomberPlayer[]>([]);
+  const [bomberGrid, setBomberGrid] = useState<BomberGrid | null>(null);
+  const [bomberStarted, setBomberStarted] = useState(false);
+  const bomberPlayersRef = useRef<BomberPlayer[]>([]);
+  bomberPlayersRef.current = bomberPlayers;
+  const bomberStartedRef = useRef(false);
+  bomberStartedRef.current = bomberStarted;
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const hasBroadcastJoin = useRef(false);
   const [channelReady, setChannelReady] = useState(false);
+
+  // Callback ref for forwarding bomber game events to BomberGame component
+  const bomberEventHandlerRef = useRef<((event: string, payload: any) => void) | null>(null);
 
   const loadGame = useCallback(async () => {
     if (!code) return;
@@ -82,6 +98,18 @@ export default function Game() {
     setCurrentTurn(g.current_turn as Color);
     setStatus(g.status as GameStatus);
     setWinner(g.winner as Winner);
+
+    // Bomber: parse players and grid from board_state
+    if (g.game_type === 'bomber') {
+      try {
+        const state = JSON.parse(g.board_state);
+        if (state.players) setBomberPlayers(state.players);
+        if (state.grid) {
+          setBomberGrid(state.grid);
+          setBomberStarted(true);
+        }
+      } catch { /* not valid json yet */ }
+    }
 
     if (g.player_white === playerId) {
       setMyColor('white');
@@ -163,7 +191,30 @@ export default function Game() {
         }
       })
       .on('broadcast', { event: 'player_joined' }, () => {
-        loadGame();
+        // Only reload from DB during lobby phase — not during active gameplay
+        if (!bomberStartedRef.current) loadGame();
+      })
+      .on('broadcast', { event: 'bomber_start' }, ({ payload }: any) => {
+        setBomberGrid(payload.grid);
+        setBomberPlayers(payload.players);
+        setBomberStarted(true);
+        setStatus('playing');
+      })
+      // Bomber game-phase events — forwarded to BomberGame via callback ref
+      .on('broadcast', { event: 'bomber_move' }, ({ payload }: any) => {
+        bomberEventHandlerRef.current?.('bomber_move', payload);
+      })
+      .on('broadcast', { event: 'bomber_bomb' }, ({ payload }: any) => {
+        bomberEventHandlerRef.current?.('bomber_bomb', payload);
+      })
+      .on('broadcast', { event: 'bomber_died' }, ({ payload }: any) => {
+        bomberEventHandlerRef.current?.('bomber_died', payload);
+      })
+      .on('broadcast', { event: 'bomber_powerup' }, ({ payload }: any) => {
+        bomberEventHandlerRef.current?.('bomber_powerup', payload);
+      })
+      .on('broadcast', { event: 'bomber_end' }, ({ payload }: any) => {
+        bomberEventHandlerRef.current?.('bomber_end', payload);
       })
       .subscribe((subStatus) => {
         if (subStatus === 'SUBSCRIBED') {
@@ -194,6 +245,111 @@ export default function Game() {
       });
     }
   }, [myColor, status, channelReady]);
+
+  // Bomber: add self to lobby via DB, then notify others
+  const hasBomberJoined = useRef(false);
+  useEffect(() => {
+    if (!game || game.game_type !== 'bomber') return;
+    if (!channelReady || hasBomberJoined.current) return;
+    if (status === 'playing' || status === 'finished') return;
+    hasBomberJoined.current = true;
+
+    async function joinBomberLobby() {
+      // Fetch our profile
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('nickname, avatar_seed')
+        .eq('id', playerId)
+        .maybeSingle();
+
+      const nickname = profile?.nickname || playerId.slice(0, 8);
+
+      const me: BomberPlayer = {
+        id: playerId,
+        nickname,
+        avatarUrl: myAvatarUrl,
+        x: 0, y: 0,
+        alive: true,
+        bombRange: 2,
+        maxBombs: 1,
+        moveCooldown: 250,
+        kills: 0,
+        color: '',
+      };
+
+      // Read current board_state, add self, write back
+      const { data: current } = await supabase
+        .from('games')
+        .select('board_state')
+        .eq('id', game!.id)
+        .single();
+
+      if (current) {
+        try {
+          const state = JSON.parse(current.board_state);
+          const players: BomberPlayer[] = state.players || [];
+          if (!players.some((p: BomberPlayer) => p.id === playerId)) {
+            players.push(me);
+            state.players = players;
+            await supabase
+              .from('games')
+              .update({ board_state: JSON.stringify(state) })
+              .eq('id', game!.id);
+          }
+          setBomberPlayers(players);
+        } catch { /* ignore */ }
+      }
+
+      // Notify others to reload
+      channelRef.current?.send({
+        type: 'broadcast',
+        event: 'player_joined',
+        payload: {},
+      });
+    }
+
+    joinBomberLobby();
+  }, [game, channelReady, playerId, myAvatarUrl, status]);
+
+  // Bomber: host starts the game
+  async function handleBomberStart() {
+    const playerList = bomberPlayersRef.current;
+    if (playerList.length < 2) return;
+
+    const grid = generateGrid(playerList.length);
+    const spawns = getSpawnPositions(playerList.length);
+    const playersWithPositions = playerList.map((p, i) => ({
+      ...p,
+      x: spawns[i].x,
+      y: spawns[i].y,
+      color: PLAYER_COLORS[i % PLAYER_COLORS.length],
+    }));
+
+    setBomberGrid(grid);
+    setBomberPlayers(playersWithPositions);
+    setBomberStarted(true);
+    setStatus('playing');
+
+    if (!TEST_MODE && game) {
+      const state = { players: playersWithPositions, grid, bombs: [], explosions: [], startedAt: Date.now(), gameTime: 180 };
+      await supabase
+        .from('games')
+        .update({ status: 'playing', board_state: JSON.stringify(state) })
+        .eq('id', game.id);
+
+      // Broadcast start event + player_joined so clients reload from DB as fallback
+      channelRef.current?.send({
+        type: 'broadcast',
+        event: 'bomber_start',
+        payload: { grid, players: playersWithPositions },
+      });
+      channelRef.current?.send({
+        type: 'broadcast',
+        event: 'player_joined',
+        payload: {},
+      });
+    }
+  }
 
   async function broadcastAndPersist(
     newBoardState: string,
@@ -327,6 +483,12 @@ export default function Game() {
     playMoveSound();
   }
 
+  function handleResign() {
+    if (!effectiveMyColor || effectiveStatus !== 'playing') return;
+    const opponentColor: Color = effectiveMyColor === 'white' ? 'black' : 'white';
+    broadcastAndPersist(boardState, currentTurn, 'finished', opponentColor, { resign: true });
+  }
+
   function copyInviteCode() {
     if (code) {
       navigator.clipboard.writeText(code);
@@ -364,7 +526,7 @@ export default function Game() {
         setInvitedUser({ id: selected.id, name, avatar: avatarUrl || '' });
 
         // Send rich message via TextChat with a Join button
-        const gameLabel = isChess ? 'Chess' : isCheckers ? 'Checkers' : 'Tic Tac Toe';
+        const gameLabel = isChess ? 'Chess' : isCheckers ? 'Checkers' : isBomber ? 'Bomber' : 'Tic Tac Toe';
         const msgIntent = new Intent('textchat', 'send-message', {
           userId: selected.id,
           text: `Join me for a game of ${gameLabel}!`,
@@ -394,6 +556,7 @@ export default function Game() {
   const isMyTurn = TEST_MODE ? true : effectiveMyColor === currentTurn;
   const isChess = game?.game_type === 'chess';
   const isCheckers = game?.game_type === 'checkers';
+  const isBomber = game?.game_type === 'bomber';
   const turnClass = effectiveStatus === 'playing' ? (isMyTurn ? 'my-turn' : 'opponent-turn') : '';
 
   // Play turn sound when it becomes my turn
@@ -420,7 +583,7 @@ export default function Game() {
     );
   }
 
-  if (!game || !effectiveMyColor) {
+  if (!game || (!effectiveMyColor && !isBomber)) {
     return (
       <div className="game-page">
         <div className="loading-state">
@@ -431,10 +594,68 @@ export default function Game() {
     );
   }
 
-  let mustCapture = false;
+  // Bomber: render lobby or game
+  if (isBomber) {
+    const isHost = game.player_white === playerId;
+    return (
+      <div className="game-page">
+        <div className="game-header">
+          <button className="back-btn" onClick={leaveGame}>
+            <i className="fa-solid fa-arrow-left"></i>
+          </button>
+          <div className="game-title">
+            <i className="fa-solid fa-bomb"></i>
+            <h2>Bomber</h2>
+          </div>
+          <button className="code-badge" onClick={copyInviteCode} title="Copy invite code">
+            <i className={copied ? 'fa-solid fa-check' : 'fa-solid fa-copy'}></i>
+            <span>{code}</span>
+          </button>
+          <button className="settings-btn" onClick={() => setSettingsOpen(true)} title="Settings">
+            <i className="fa-solid fa-gear"></i>
+          </button>
+          <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+        </div>
+
+        {bomberStarted && bomberGrid ? (
+          <BomberGame
+            channel={channelRef.current}
+            onRegisterHandler={(fn) => { bomberEventHandlerRef.current = fn; }}
+            onGameEnd={async (winnerId) => {
+              if (!game) return;
+              const winnerValue = winnerId || 'draw';
+              await supabase
+                .from('games')
+                .update({ status: 'finished', winner: winnerValue })
+                .eq('id', game.id);
+            }}
+            playerId={playerId}
+            initialGrid={bomberGrid}
+            initialPlayers={bomberPlayers}
+            isTestMode={TEST_MODE}
+          />
+        ) : (
+          <BomberLobby
+            players={bomberPlayers}
+            isHost={isHost || TEST_MODE}
+            onStart={handleBomberStart}
+            inviteCode={code || ''}
+            copied={copied}
+            onCopy={copyInviteCode}
+          />
+        )}
+      </div>
+    );
+  }
+
+  let mustCapturePieces: Set<string> = new Set();
   if (isCheckers && effectiveStatus === 'playing' && isMyTurn) {
     const moves = getValidMoves(deserializeBoard(boardState), currentTurn);
-    mustCapture = moves.length > 0 && moves[0].captures.length > 0;
+    if (moves.length > 0 && moves[0].captures.length > 0) {
+      for (const m of moves) {
+        if (m.captures.length > 0) mustCapturePieces.add(`${m.from[0]},${m.from[1]}`);
+      }
+    }
   }
 
   return (
@@ -444,13 +665,24 @@ export default function Game() {
           <i className="fa-solid fa-arrow-left"></i>
         </button>
         <div className="game-title">
-          <i className={isChess ? 'fa-solid fa-chess' : isCheckers ? 'fa-solid fa-circle-dot' : 'fa-solid fa-hashtag'}></i>
-          <h2>{isChess ? 'Chess' : isCheckers ? 'Checkers' : 'Tic Tac Toe'}</h2>
+          <i className={isChess ? 'fa-solid fa-chess' : isCheckers ? 'fa-solid fa-circle-dot' : isBomber ? 'fa-solid fa-bomb' : 'fa-solid fa-hashtag'}></i>
+          <h2>{isChess ? 'Chess' : isCheckers ? 'Checkers' : isBomber ? 'Bomber' : 'Tic Tac Toe'}</h2>
         </div>
         <button className="code-badge" onClick={copyInviteCode} title="Copy invite code">
           <i className={copied ? 'fa-solid fa-check' : 'fa-solid fa-copy'}></i>
           <span>{code}</span>
         </button>
+        {effectiveStatus === 'playing' && (
+          resignConfirm ? (
+            <button className="resign-btn confirm" onClick={handleResign}>
+              <i className="fa-solid fa-check"></i> Sure?
+            </button>
+          ) : (
+            <button className="resign-btn" onClick={() => { setResignConfirm(true); setTimeout(() => setResignConfirm(false), 3000); }}>
+              <i className="fa-solid fa-flag"></i>
+            </button>
+          )
+        )}
         <button className="settings-btn" onClick={() => setSettingsOpen(true)} title="Settings">
           <i className="fa-solid fa-gear"></i>
         </button>
@@ -503,12 +735,6 @@ export default function Game() {
         );
       })()}
 
-      {effectiveStatus === 'playing' && mustCapture && (
-        <div className="capture-badge" style={{ marginBottom: '0.5rem' }}>
-          <i className="fa-solid fa-crosshairs"></i> Must capture!
-        </div>
-      )}
-
       {effectiveStatus === 'waiting' ? (
         <div className="waiting-screen">
           <div className="waiting-animation">
@@ -516,7 +742,7 @@ export default function Game() {
             <div className="pulse-ring delay-1"></div>
             <div className="pulse-ring delay-2"></div>
             <div className="waiting-icon">
-              <i className={isChess ? 'fa-solid fa-chess-knight' : isCheckers ? 'fa-solid fa-circle-dot' : 'fa-solid fa-hashtag'}></i>
+              <i className={isChess ? 'fa-solid fa-chess-knight' : isCheckers ? 'fa-solid fa-circle-dot' : isBomber ? 'fa-solid fa-bomb' : 'fa-solid fa-hashtag'}></i>
             </div>
           </div>
 
@@ -628,6 +854,7 @@ export default function Game() {
           gameOver={effectiveStatus === 'finished'}
           turnClass={turnClass}
           lastMove={lastMove}
+          mustCapturePieces={mustCapturePieces}
         />
       ) : (
         <TicTacToeBoard

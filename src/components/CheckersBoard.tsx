@@ -10,9 +10,10 @@ interface Props {
   gameOver: boolean;
   turnClass?: string;
   lastMove?: LastMove | null;
+  mustCapturePieces?: Set<string>;
 }
 
-export default function CheckersBoard({ board, myColor, isMyTurn, onMove, gameOver, turnClass, lastMove }: Props) {
+export default function CheckersBoard({ board, myColor, isMyTurn, onMove, gameOver, turnClass, lastMove, mustCapturePieces }: Props) {
   const [selected, setSelected] = useState<[number, number] | null>(null);
   const [validMoves, setValidMoves] = useState<CheckerMove[]>([]);
   const [animating, setAnimating] = useState<{ row: number; col: number; dx: number; dy: number } | null>(null);
@@ -115,9 +116,12 @@ export default function CheckersBoard({ board, myColor, isMyTurn, onMove, gameOv
                   const isKing = cell === 'W' || cell === 'B';
                   const isWhite = cell?.toLowerCase() === 'w';
 
+                  const isMustCapture = mustCapturePieces?.has(`${ar},${ac}`) ?? false;
+
                   let className = `cell ${isDark ? 'dark' : 'light'}`;
                   if (isSelected) className += ' selected';
                   if (isValid) className += ' valid-target';
+                  if (isMustCapture) className += ' must-capture';
 
                   const isAnimTarget = animating && animating.row === ar && animating.col === ac;
                   const animStyle = isAnimTarget

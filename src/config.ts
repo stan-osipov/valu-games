@@ -1,1 +1,1 @@
-export const TEST_MODE = false; // flip to false to disable
+export const TEST_MODE = false; // flip to true for single-player testing
