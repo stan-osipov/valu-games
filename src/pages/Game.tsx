@@ -219,6 +219,9 @@ export default function Game() {
       .on('broadcast', { event: 'bomber_end' }, ({ payload }: any) => {
         bomberEventHandlerRef.current?.('bomber_end', payload);
       })
+      .on('broadcast', { event: 'bomber_walls_destroyed' }, ({ payload }: any) => {
+        bomberEventHandlerRef.current?.('bomber_walls_destroyed', payload);
+      })
       .subscribe((subStatus) => {
         if (subStatus === 'SUBSCRIBED') {
           setChannelReady(true);
@@ -641,6 +644,11 @@ export default function Game() {
                 .from('games')
                 .update({ status: 'finished', winner: winnerValue })
                 .eq('id', game.id);
+            }}
+            onReturnToLobby={() => {
+              setBomberStarted(false);
+              setBomberGrid(null);
+              setBomberPlayers(prev => prev.map(p => ({ ...p, alive: true, kills: 0, bombRange: 2, maxBombs: 1, moveCooldown: 250 })));
             }}
             playerId={playerId}
             initialGrid={bomberGrid}

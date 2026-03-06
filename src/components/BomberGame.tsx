@@ -22,10 +22,17 @@ const EXPLOSION_DURATION = 500;
 const GAME_DURATION = 180;
 const MOVE_INTERVAL = 150;
 
+const DEATH_MESSAGES = [
+  'Oops!', 'Boom!', 'RIP', 'Fried!', 'Toasted!', 'Crispy!',
+  'Kaboom!', 'Splat!', 'Bye bye!', 'Noooo!', 'Wasted!', 'Burnt!',
+  'Ouch!', 'Oh no!', 'Yikes!', 'Rekt!',
+];
+
 interface Props {
   channel: RealtimeChannel | null;
   onRegisterHandler: (fn: ((event: string, payload: any) => void) | null) => void;
   onGameEnd: (winnerId: string | null) => void;
+  onReturnToLobby: () => void;
   playerId: string;
   initialGrid: BomberGrid;
   initialPlayers: BomberPlayer[];
@@ -43,6 +50,7 @@ export default function BomberGame({
   channel,
   onRegisterHandler,
   onGameEnd,
+  onReturnToLobby,
   playerId,
   initialGrid,
   initialPlayers,
@@ -53,10 +61,14 @@ export default function BomberGame({
   const [bombs, setBombs] = useState<BomberBomb[]>([]);
   const [explosions, setExplosions] = useState<BomberExplosion[]>([]);
   const [gameOver, setGameOver] = useState(false);
+  const [gameOverDismissed, setGameOverDismissed] = useState(false);
   const [winnerId, setWinnerId] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(3);
   const [timeLeft, setTimeLeft] = useState(GAME_DURATION);
   const [gameStarted, setGameStarted] = useState(false);
+
+  // Track where players died for showing dead bodies
+  const [deadBodies, setDeadBodies] = useState<Map<string, { player: BomberPlayer; x: number; y: number; message: string }>>(new Map());
 
   const gridRef = useRef(grid);
   const playersRef = useRef(players);
@@ -97,14 +109,38 @@ export default function BomberGame({
           break;
         case 'bomber_died':
           if (payload.playerId === playerId) return;
-          setPlayers(prev => prev.map(p =>
-            p.id === payload.playerId ? { ...p, alive: false } : p
-          ));
+          setPlayers(prev => {
+            const dying = prev.find(p => p.id === payload.playerId);
+            if (dying && dying.alive) {
+              setDeadBodies(old => {
+                const next = new Map(old);
+                next.set(payload.playerId, {
+                  player: dying,
+                  x: dying.x, y: dying.y,
+                  message: DEATH_MESSAGES[Math.floor(Math.random() * DEATH_MESSAGES.length)],
+                });
+                return next;
+              });
+            }
+            return prev.map(p =>
+              p.id === payload.playerId ? { ...p, alive: false } : p
+            );
+          });
           if (payload.killedBy && payload.killedBy !== payload.playerId) {
             setPlayers(prev => prev.map(p =>
               p.id === payload.killedBy ? { ...p, kills: p.kills + 1 } : p
             ));
           }
+          break;
+        case 'bomber_walls_destroyed':
+          // Apply authoritative wall destruction results from other clients
+          setGrid(prev => {
+            const newGrid = prev.map(row => [...row]) as BomberGrid;
+            for (const c of payload.cells) {
+              newGrid[c.y][c.x] = c.v as BomberCell;
+            }
+            return newGrid;
+          });
           break;
         case 'bomber_powerup':
           if (payload.playerId === playerId) return;
@@ -208,18 +244,44 @@ export default function BomberGame({
       }
     }
 
+    // Collect wall changes for sync broadcast
+    const wallChanges: { x: number; y: number; v: number }[] = [];
+    for (const cell of allExplosionCells) {
+      if (currentGrid[cell.y][cell.x] === 2 && newGrid[cell.y][cell.x] !== 2) {
+        wallChanges.push({ x: cell.x, y: cell.y, v: newGrid[cell.y][cell.x] });
+      }
+    }
+
     setGrid(newGrid);
     gridRef.current = newGrid;
     setBombs(remaining);
     setExplosions(prev => [...prev, { cells: allExplosionCells, startedAt: now }]);
     playExplosionSound();
     checkDeaths(allExplosionCells);
+
+    // Broadcast wall destruction results so all clients agree on powerup placement
+    if (wallChanges.length > 0) {
+      channel?.send({
+        type: 'broadcast',
+        event: 'bomber_walls_destroyed',
+        payload: { cells: wallChanges },
+      });
+    }
   }
 
   function checkDeaths(explosionCells: { x: number; y: number }[]) {
     const me = playersRef.current.find(p => p.id === playerId);
     if (!me || !me.alive) return;
     if (explosionCells.some(c => c.x === me.x && c.y === me.y)) {
+      setDeadBodies(old => {
+        const next = new Map(old);
+        next.set(playerId, {
+          player: me,
+          x: me.x, y: me.y,
+          message: DEATH_MESSAGES[Math.floor(Math.random() * DEATH_MESSAGES.length)],
+        });
+        return next;
+      });
       setPlayers(prev => prev.map(p =>
         p.id === playerId ? { ...p, alive: false } : p
       ));
@@ -381,6 +443,8 @@ export default function BomberGame({
   for (const bomb of bombs) bombMap.set(`${bomb.x},${bomb.y}`, bomb);
   const playerMap = new Map<string, BomberPlayer>();
   for (const p of players) if (p.alive) playerMap.set(`${p.x},${p.y}`, p);
+  const deadBodyMap = new Map<string, { player: BomberPlayer; message: string }>();
+  for (const [, db] of deadBodies) deadBodyMap.set(`${db.x},${db.y}`, { player: db.player, message: db.message });
 
   const me = players.find(p => p.id === playerId);
   const alivePlayers = players.filter(p => p.alive);
@@ -418,14 +482,22 @@ export default function BomberGame({
             const key = `${x},${y}`;
             const bomb = bombMap.get(key);
             const player = playerMap.get(key);
+            const dead = deadBodyMap.get(key);
             const isExplosion = explosionSet.has(key);
             const playerIndex = player ? players.findIndex(p => p.id === player.id) : -1;
+            const deadIndex = dead ? players.findIndex(p => p.id === dead.player.id) : -1;
             return (
               <div key={key} className={`bomber-cell ${getCellClass(cell)} ${isExplosion ? 'explosion' : ''}`}>
                 {cell === 3 && !isExplosion && <div className="bomber-powerup range"><i className="fa-solid fa-up-right-and-down-left-from-center"></i></div>}
                 {cell === 4 && !isExplosion && <div className="bomber-powerup bomb"><i className="fa-solid fa-bomb"></i></div>}
                 {cell === 5 && !isExplosion && <div className="bomber-powerup speed"><i className="fa-solid fa-bolt"></i></div>}
                 {bomb && !isExplosion && <div className="bomber-bomb-sprite"><i className="fa-solid fa-bomb"></i></div>}
+                {dead && !player && (
+                  <div className="bomber-dead-body" style={{ borderColor: PLAYER_COLORS[deadIndex % PLAYER_COLORS.length] }}>
+                    <img src={dead.player.avatarUrl} alt="" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    <div className="bomber-dead-body-msg">{dead.message}</div>
+                  </div>
+                )}
                 {player && (
                   <div className="bomber-player-sprite" style={{ borderColor: PLAYER_COLORS[playerIndex % PLAYER_COLORS.length] }}>
                     <img src={player.avatarUrl} alt="" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
@@ -456,7 +528,7 @@ export default function BomberGame({
         <button className="bomber-bomb-btn" onTouchStart={(e) => { e.preventDefault(); doPlaceBomb(); }}><i className="fa-solid fa-bomb"></i></button>
       </div>
 
-      {gameOver && (
+      {gameOver && !gameOverDismissed && (
         <div className="bomber-game-over-overlay">
           <div className={`bomber-game-over-modal ${winnerId === playerId ? 'win' : winnerId === null ? 'draw' : 'lose'}`}>
             <div className={`game-over-icon ${winnerId === playerId ? 'win' : winnerId === null ? 'draw' : 'lose'}`}>
@@ -468,8 +540,14 @@ export default function BomberGame({
                 : winnerId === null || winnerId === 'draw' ? 'No clear winner'
                 : (() => { const w = players.find(p => p.id === winnerId); return w ? `${w.nickname} wins!` : 'Game over'; })()}
             </p>
-            <div className="game-over-buttons">
-              <button className="game-over-btn primary" onClick={() => { sessionStorage.removeItem('active_game_code'); navigate('/'); }}>
+            <div className="bomber-game-over-btns">
+              <button className="game-over-btn primary" onClick={onReturnToLobby}>
+                <i className="fa-solid fa-users"></i> New Game
+              </button>
+              <button className="game-over-btn secondary" onClick={() => setGameOverDismissed(true)}>
+                <i className="fa-solid fa-eye"></i> Watch
+              </button>
+              <button className="game-over-btn secondary" onClick={() => { sessionStorage.removeItem('active_game_code'); navigate('/'); }}>
                 <i className="fa-solid fa-house"></i> Home
               </button>
             </div>

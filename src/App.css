@@ -2534,6 +2534,52 @@
   object-fit: cover;
 }
 
+/* Dead body on grid */
+.bomber-dead-body {
+  width: 80%;
+  height: 80%;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  position: absolute;
+  border: 2px solid;
+  overflow: visible;
+  background: #1a1a2e;
+  opacity: 0.55;
+  filter: grayscale(1);
+}
+
+.bomber-dead-body img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.bomber-dead-body-msg {
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.75);
+  color: #ff6b6b;
+  font-size: 0.55em;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  z-index: 6;
+  pointer-events: none;
+  animation: bomber-death-msg 0.3s ease-out;
+}
+
+@keyframes bomber-death-msg {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
 /* Bomb sprite */
 .bomber-bomb-sprite {
   position: absolute;
@@ -2695,6 +2741,29 @@
 .bomber-game-over-modal.win { border-color: rgba(0, 184, 148, 0.4); box-shadow: 0 0 40px rgba(0, 184, 148, 0.15); }
 .bomber-game-over-modal.lose { border-color: rgba(255, 107, 107, 0.4); box-shadow: 0 0 40px rgba(255, 107, 107, 0.1); }
 .bomber-game-over-modal.draw { border-color: rgba(254, 202, 87, 0.4); box-shadow: 0 0 40px rgba(254, 202, 87, 0.1); }
+
+.bomber-game-over-btns {
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.bomber-game-over-btns .game-over-btn {
+  flex: 1;
+  font-size: 0.85em;
+  padding: 0.6rem 0.4rem;
+}
+
+.bomber-game-over-btns .game-over-btn.secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+}
+
+.bomber-game-over-btns .game-over-btn.secondary:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text-primary);
+}
 
 /* Spectating banner */
 .bomber-spectating {
